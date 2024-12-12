@@ -1,7 +1,15 @@
 #!/bin/bash
 
-# Variables (modifica estas según tus necesidades)
-DOMAIN="tu-dominio.com"
+# Solicitar dominio al usuario
+echo "Por favor, ingresa tu dominio (sin 'www.'):"
+read DOMAIN
+
+# Verificar que el dominio no esté vacío
+if [ -z "$DOMAIN" ]; then
+    echo "[ERROR] El dominio no puede estar vacío. Por favor, intenta de nuevo."
+    exit 1
+fi
+
 ODOO_USER="odoo"
 ODOO_HOME="/opt/odoo"
 ODOO_CONFIG="/etc/odoo.conf"
