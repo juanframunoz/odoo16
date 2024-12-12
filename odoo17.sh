@@ -1,5 +1,47 @@
 #!/bin/bash
 
+# Actualizar el sistema
+echo "[INFO] Actualizando el sistema..."
+sudo apt update && sudo apt upgrade -y
+
+# Instalar dependencias del sistema necesarias para Odoo
+echo "[INFO] Instalando dependencias básicas..."
+sudo apt install -y wget curl git python3-pip build-essential libssl-dev libffi-dev python3-dev python3-venv libpq-dev postgresql nginx certbot python3-certbot-nginx
+
+# Instalar dependencias de Python necesarias para Odoo
+echo "[INFO] Instalando dependencias de Python..."
+sudo apt install -y libxml2-dev libxslt1-dev zlib1g-dev libsasl2-dev libldap2-dev build-essential
+
+# Instalar dependencias para la generación de PDF
+echo "[INFO] Instalando dependencias para la generación de PDF..."
+sudo apt install -y libjpeg8-dev liblcms2-dev libblas-dev libatlas-base-dev
+
+# Instalar dependencias para las imágenes (Pillow)
+echo "[INFO] Instalando dependencias para imágenes (Pillow)..."
+sudo apt install -y libjpeg-dev libpng-dev libfreetype6-dev
+
+# Instalar el servidor de base de datos PostgreSQL
+echo "[INFO] Instalando PostgreSQL..."
+sudo apt install -y postgresql postgresql-contrib
+
+# Instalar dependencias para SSL (Let's Encrypt)
+echo "[INFO] Instalando Certbot para SSL..."
+sudo apt install -y certbot python3-certbot-nginx
+
+# Instalar otras herramientas necesarias
+echo "[INFO] Instalando otras herramientas necesarias..."
+sudo apt install -y npm
+
+# Instalar dependencias de Odoo desde requirements.txt (para Odoo 17)
+echo "[INFO] Instalando dependencias de Odoo desde el archivo requirements.txt..."
+sudo pip3 install -r /opt/odoo/odoo/requirements.txt
+
+# Verificar la instalación de las dependencias
+echo "[INFO] Verificando la instalación de dependencias..."
+sudo pip3 freeze
+
+echo "[INFO] Dependencias instaladas correctamente. Ahora Odoo debería poder ejecutarse correctamente."
+
 # Solicitar dominio al usuario
 echo "Por favor, ingresa tu dominio (sin 'www.'):"
 read DOMAIN
