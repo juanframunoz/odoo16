@@ -47,7 +47,15 @@ sudo -u odoo git clone https://github.com/odoo/odoo.git /odoo/odoo-server -b 17.
 echo "Creando entorno virtual..."
 sudo -u odoo python3 -m venv /odoo/odoo-server/odoo-venv
 source /odoo/odoo-server/odoo-venv/bin/activate
-pip install -U pip setuptools wheel
+pip install --upgrade pip setuptools wheel
+
+# Instalar Cython y Gevent
+echo "Instalando Cython y Gevent..."
+pip install --upgrade Cython
+pip install gevent==22.10.2
+
+# Instalar dependencias de Odoo
+echo "Instalando dependencias de Odoo..."
 pip install -r /odoo/odoo-server/requirements.txt || exit 1
 deactivate
 
