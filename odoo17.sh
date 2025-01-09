@@ -1,164 +1,93 @@
 #!/bin/bash
 
-# Actualizar el sistema
-echo "[INFO] Actualizando el sistema..."
-sudo apt update && sudo apt upgrade -y
+# Formulario interactivo para ingresar el dominio
+read -p "Por favor, ingresa tu dominio (ejemplo: midominio.com): " DOMAIN
 
-# Instalar dependencias del sistema necesarias para Odoo
-echo "[INFO] Instalando dependencias básicas..."
-sudo apt install -y wget curl git python3-pip build-essential libssl-dev libffi-dev python3-dev python3-venv libpq-dev postgresql nginx certbot python3-certbot-nginx
-
-# Instalar dependencias de Python necesarias para Odoo
-echo "[INFO] Instalando dependencias de Python..."
-sudo apt install -y libxml2-dev libxslt1-dev zlib1g-dev libsasl2-dev libldap2-dev build-essential
-
-# Instalar dependencias para la generación de PDF
-echo "[INFO] Instalando dependencias para la generación de PDF..."
-sudo apt install -y libjpeg8-dev liblcms2-dev libblas-dev libatlas-base-dev
-
-# Instalar dependencias para las imágenes (Pillow)
-echo "[INFO] Instalando dependencias para imágenes (Pillow)..."
-sudo apt install -y libjpeg-dev libpng-dev libfreetype6-dev
-
-# Instalar el servidor de base de datos PostgreSQL
-echo "[INFO] Instalando PostgreSQL..."
-sudo apt install -y postgresql postgresql-contrib
-
-# Instalar dependencias para SSL (Let's Encrypt)
-echo "[INFO] Instalando Certbot para SSL..."
-sudo apt install -y certbot python3-certbot-nginx
-
-# Instalar otras herramientas necesarias
-echo "[INFO] Instalando otras herramientas necesarias..."
-sudo apt install -y npm
-
-# Instalar dependencias de Odoo desde requirements.txt (para Odoo 17)
-echo "[INFO] Instalando dependencias de Odoo desde el archivo requirements.txt..."
-sudo pip3 install -r /opt/odoo/odoo/requirements.txt
-
-# Verificar la instalación de las dependencias
-echo "[INFO] Verificando la instalación de dependencias..."
-sudo pip3 freeze
-
-echo "[INFO] Dependencias instaladas correctamente. Ahora Odoo debería poder ejecutarse correctamente."
-
-# Solicitar dominio al usuario
-echo "Por favor, ingresa tu dominio (sin 'www.'):"
-read DOMAIN
-
-# Verificar que el dominio no esté vacío
-if [ -z "$DOMAIN" ]; then
-    echo "[ERROR] El dominio no puede estar vacío. Por favor, intenta de nuevo."
-    exit 1
+if [[ -z "$DOMAIN" ]]; then
+  echo "No ingresaste un dominio. Por favor, vuelve a ejecutar el script e ingresa uno válido."
+  exit 1
 fi
 
-ODOO_USER="odoo"
-ODOO_HOME="/opt/odoo"
-ODOO_CONFIG="/etc/odoo.conf"
-NGINX_SITE="/etc/nginx/sites-available/odoo"
-
 # Actualizar el sistema
-echo "[INFO] Actualizando el sistema..."
+echo "Actualizando el sistema..."
 sudo apt update && sudo apt upgrade -y
 
-# Instalar dependencias básicas
-echo "[INFO] Instalando dependencias básicas..."
-sudo apt install -y wget curl git python3-pip build-essential libssl-dev libffi-dev python3-dev python3-venv libpq-dev postgresql nginx certbot python3-certbot-nginx
+# Instalación de dependencias
+echo "Instalando dependencias..."
+sudo apt install -y git python3 python3-pip python3-dev build-essential wget \
+python3-venv libpq-dev libjpeg-dev libxml2-dev libxslt1-dev zlib1g-dev libldap2-dev \
+libsasl2-dev libffi-dev libssl-dev nodejs npm curl
 
-# Crear usuario para Odoo
-echo "[INFO] Creando usuario Odoo..."
-sudo adduser --system --home=$ODOO_HOME --group $ODOO_USER
+# Configurar Node.js y npm
+echo "Instalando Node.js y npm..."
+sudo npm install -g less less-plugin-clean-css rtlcss
 
-# Instalar PostgreSQL
-echo "[INFO] Configurando PostgreSQL..."
-sudo su - postgres -c "createuser -s $ODOO_USER"
+# Instalar y configurar PostgreSQL
+echo "Instalando PostgreSQL..."
+sudo apt install -y postgresql postgresql-contrib
+sudo systemctl enable postgresql
+sudo systemctl start postgresql
 
-# Descargar Odoo 17
-echo "[INFO] Descargando Odoo 17..."
-sudo git clone https://github.com/odoo/odoo.git --branch 17.0 --single-branch $ODOO_HOME/odoo
+echo "Creando usuario y base de datos de Odoo..."
+sudo -u postgres createuser -s odoo
+sudo -u postgres psql -c "ALTER USER odoo WITH PASSWORD 'odoo';"
+
+# Clonar el repositorio de Odoo 17
+echo "Clonando el repositorio de Odoo 17 Community..."
+sudo mkdir -p /odoo/odoo-server
+sudo chown -R $USER:$USER /odoo
+cd /odoo
+git clone --depth 1 --branch 17.0 https://github.com/odoo/odoo.git odoo-server
+
+# Crear entorno virtual y activar
+echo "Creando entorno virtual para Odoo..."
+cd /odoo/odoo-server
+python3 -m venv odoo-venv
+source odoo-venv/bin/activate
 
 # Instalar dependencias de Python
-echo "[INFO] Instalando dependencias de Python..."
-sudo pip3 install -r $ODOO_HOME/odoo/requirements.txt
+echo "Instalando dependencias de Python..."
+pip3 install wheel
+pip3 install -r requirements.txt
 
-# Crear archivo de configuración para Odoo
-echo "[INFO] Creando archivo de configuración..."
-sudo bash -c "cat > $ODOO_CONFIG" <<EOF
+# Crear usuario del sistema para Odoo
+echo "Creando usuario del sistema para Odoo..."
+sudo useradd -m -d /home/odoo -U -r -s /bin/bash odoo
+sudo mkdir -p /var/lib/odoo /var/log/odoo
+sudo chown -R odoo:odoo /var/lib/odoo /var/log/odoo /odoo
+
+# Configurar archivo de configuración de Odoo
+echo "Configurando Odoo..."
+sudo tee /etc/odoo.conf > /dev/null <<EOL
 [options]
-addons_path = $ODOO_HOME/odoo/addons
+addons_path = /odoo/odoo-server/addons
 data_dir = /var/lib/odoo
+logfile = /var/log/odoo/odoo.log
+admin_passwd = admin
 db_host = False
 db_port = False
-db_user = $ODOO_USER
-db_password = False
-logfile = /var/log/odoo/odoo.log
-EOF
+db_user = odoo
+db_password = odoo
+proxy_mode = True
+EOL
 
-# Crear directorios necesarios
-echo "[INFO] Creando directorios necesarios..."
-sudo mkdir -p /var/lib/odoo /var/log/odoo
-sudo chown $ODOO_USER:$ODOO_USER /var/lib/odoo /var/log/odoo
+sudo chown odoo:odoo /etc/odoo.conf
+sudo chmod 640 /etc/odoo.conf
 
-# Crear servicio de Odoo
-echo "[INFO] Creando servicio systemd para Odoo..."
-sudo bash -c "cat > /etc/systemd/system/odoo.service" <<EOF
+# Configurar servicio systemd
+echo "Configurando el servicio de Odoo..."
+sudo tee /etc/systemd/system/odoo.service > /dev/null <<EOL
 [Unit]
 Description=Odoo
-Documentation=https://www.odoo.com/documentation/17.0/
+Documentation=http://www.odoo.com
+Requires=postgresql.service
 After=network.target postgresql.service
 
 [Service]
-User=$ODOO_USER
-Group=$ODOO_USER
-ExecStart=/usr/bin/python3 $ODOO_HOME/odoo/odoo-bin -c $ODOO_CONFIG
-StandardOutput=journal+console
-
-[Install]
-WantedBy=multi-user.target
-EOF
-
-# Iniciar y habilitar el servicio de Odoo
-echo "[INFO] Iniciando y habilitando Odoo..."
-sudo systemctl daemon-reload
-sudo systemctl enable odoo
-sudo systemctl start odoo
-
-# Configurar Nginx para Odoo
-echo "[INFO] Configurando Nginx..."
-sudo bash -c "cat > $NGINX_SITE" <<EOF
-server {
-    server_name $DOMAIN www.$DOMAIN;
-
-    access_log /var/log/nginx/odoo.access.log;
-    error_log /var/log/nginx/odoo.error.log;
-
-    location / {
-        proxy_pass http://127.0.0.1:8069;
-        proxy_set_header Host \$host;
-        proxy_set_header X-Real-IP \$remote_addr;
-        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto \$scheme;
-    }
-
-    client_max_body_size 100M;
-
-    # Redirigir www a no-www
-    if ($host = www.$DOMAIN) {
-        return 301 https://$DOMAIN$request_uri;
-    }
-}
-EOF
-
-sudo ln -s $NGINX_SITE /etc/nginx/sites-enabled/
-sudo nginx -t && sudo systemctl reload nginx
-
-# Configurar SSL con Let's Encrypt
-echo "[INFO] Configurando SSL con Let's Encrypt..."
-sudo certbot --nginx -d $DOMAIN -d www.$DOMAIN
-
-# Verificar renovación automática de SSL
-echo "[INFO] Probando renovación automática de SSL..."
-sudo certbot renew --dry-run
-
-# Finalización
-echo "[INFO] Instalación y configuración completadas. Accede a https://$DOMAIN para usar Odoo."
+Type=simple
+SyslogIdentifier=odoo
+PermissionsStartOnly=true
+User=odoo
+Group=odoo
+ExecStart=/odoo/odoo-server/odoo-bin -c /etc/odoo.conf
+WorkingDirectory=/odoo/
