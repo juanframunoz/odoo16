@@ -1,78 +1,100 @@
 #!/bin/bash
 
-# Script interactivo para configurar Odoo 17 con dominio personalizado y SSL de Let's Encrypt
+# Comprobar si el script se ejecuta con privilegios de superusuario
+if [[ $EUID -ne 0 ]]; then
+   echo "Este script debe ser ejecutado como root o con sudo" 
+   exit 1
+fi
 
-# Solicitar el dominio del usuario
-read -p "Introduce el dominio de tu servidor (ej. odoo17.tudominio.com): " DOMAIN
-read -p "Introduce el correo electrónico para Let's Encrypt: " EMAIL
+# Solicitar el dominio y el correo de Let's Encrypt al usuario
+echo "Por favor, introduce el dominio de tu servidor (por ejemplo, ejemplo.com): "
+read DOMAIN
+echo "Por favor, introduce el correo electrónico para Let's Encrypt: "
+read LETSENCRYPT_EMAIL
 
-# Variables de configuración
-ODOO_VERSION="17.0"
-ODOO_DIR="/opt/odoo-server"
-ODOO_USER="odoo"
-ODOO_CONF="/etc/odoo/odoo.conf"
-ODOO_DB_USER="odoo"
-ODOO_DB_PASSWORD="odoo"
-ODOO_PORT="8069"
-
-# Actualizar el sistema
-echo "Actualizando el sistema..."
+# Actualizar e instalar dependencias necesarias
+echo "Actualizando el sistema y instalando dependencias..."
 sudo apt update && sudo apt upgrade -y
 
-# Instalar dependencias necesarias para Odoo y Let's Encrypt
-echo "Instalando dependencias..."
-sudo apt install -y python3 python3-pip python3-dev python3-venv build-essential libxml2-dev libxslt1-dev zlib1g-dev libsasl2-dev libldap2-dev libssl-dev libmysqlclient-dev libjpeg-dev liblcms2-dev libblas-dev libatlas-base-dev libcurl4-openssl-dev libpq-dev git nginx certbot python3-certbot-nginx
+# Instalar dependencias generales para Odoo y Let's Encrypt
+sudo apt install -y python3-venv python3-dev python3-pip build-essential libssl-dev libffi-dev libxml2-dev libxslt1-dev zlib1g-dev libsasl2-dev libldap2-dev libjpeg8-dev liblcms2-dev libblas-dev libatlas-base-dev postgresql postgresql-contrib nginx certbot python3-certbot-nginx git
 
-# Crear el usuario de Odoo
-echo "Creando usuario del sistema para Odoo..."
-sudo useradd -m -U -r -d $ODOO_DIR -s /bin/bash $ODOO_USER
+# Crear un nuevo usuario para Odoo
+echo "Creando el usuario 'odoo' para ejecutar el servidor de Odoo..."
+sudo adduser --system --home /opt/odoo --group --disabled-password --quiet odoo
 
-# Descargar Odoo desde GitHub
-echo "Descargando Odoo desde GitHub..."
-sudo git clone https://github.com/odoo/odoo.git --branch $ODOO_VERSION --single-branch $ODOO_DIR
+# Crear el entorno virtual de Python para Odoo
+echo "Creando un entorno virtual para Odoo..."
+sudo -u odoo python3 -m venv /opt/odoo/odoo-venv
 
-# Crear entorno virtual para Odoo
-echo "Creando entorno virtual de Python..."
-sudo python3 -m venv $ODOO_DIR/odoo-venv
+# Activar el entorno virtual e instalar las dependencias de Odoo
+echo "Instalando las dependencias de Odoo..."
+source /opt/odoo/odoo-venv/bin/activate
+pip install --upgrade pip
+pip install setuptools
+pip install wheel
+pip install -r /opt/odoo/requirements.txt
 
-# Activar el entorno virtual
-echo "Activando el entorno virtual..."
-source $ODOO_DIR/odoo-venv/bin/activate
+# Clonar el repositorio de Odoo 17
+echo "Clonando Odoo 17 CE desde GitHub..."
+sudo -u odoo git clone https://github.com/odoo/odoo.git /opt/odoo/odoo
 
-# Instalar dependencias de Python necesarias para Odoo
-echo "Instalando dependencias de Python..."
-pip install -r $ODOO_DIR/requirements.txt
+# Configurar el archivo de configuración de Odoo
+echo "Creando el archivo de configuración de Odoo..."
+sudo cp /opt/odoo/odoo/debian/odoo.conf /opt/odoo/odoo.conf
 
-# Salir del entorno virtual
-deactivate
+# Configuración básica de Odoo
+sudo sed -i "s|^db_host = .*|db_host = False|" /opt/odoo/odoo.conf
+sudo sed -i "s|^db_user = .*|db_user = odoo|" /opt/odoo/odoo.conf
+sudo sed -i "s|^db_password = .*|db_password = False|" /opt/odoo/odoo.conf
+sudo sed -i "s|^admin_passwd = .*|admin_passwd = admin1234|" /opt/odoo/odoo.conf
+sudo sed -i "s|^xmlrpc_port = .*|xmlrpc_port = 8069|" /opt/odoo/odoo.conf
+sudo sed -i "s|^logfile = .*|logfile = /opt/odoo/odoo.log|" /opt/odoo/odoo.conf
 
-# Crear archivo de configuración de Odoo
-echo "Creando archivo de configuración de Odoo..."
-sudo mkdir -p /etc/odoo
-cat <<EOL | sudo tee $ODOO_CONF
-[options]
-   ; This is the password that allows database operations:
-   admin_passwd = admin
-   db_host = False
-   db_port = False
-   db_user = $ODOO_DB_USER
-   db_password = $ODOO_DB_PASSWORD
-   db_filter = ^$ODOO_USER.*
-   logfile = /var/log/odoo/odoo.log
-   addons_path = $ODOO_DIR/addons
-   data_dir = /var/lib/odoo
-   longpolling_port = 8072
-   xmlrpc_port = $ODOO_PORT
-   proxy_mode = True
+# Establecer permisos adecuados
+echo "Estableciendo los permisos correctos en los archivos de Odoo..."
+sudo chown -R odoo: /opt/odoo
+
+# Instalar y configurar Nginx
+echo "Instalando y configurando Nginx..."
+sudo apt install -y nginx
+
+# Configuración de Nginx para Odoo
+echo "Creando archivo de configuración para Nginx..."
+cat <<EOL | sudo tee /etc/nginx/sites-available/odoo
+server {
+    listen 80;
+    server_name $DOMAIN;
+
+    location / {
+        proxy_pass http://127.0.0.1:8069;
+        proxy_set_header Host \$host;
+        proxy_set_header X-Real-IP \$remote_addr;
+        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto \$scheme;
+    }
+}
 EOL
 
-# Asegurarse de que los directorios de log y data sean accesibles por el usuario de Odoo
-echo "Asegurando permisos del directorio..."
-sudo mkdir -p /var/log/odoo
-sudo chown -R $ODOO_USER:$ODOO_USER $ODOO_DIR /var/log/odoo /var/lib/odoo
+# Habilitar el sitio en Nginx
+sudo ln -s /etc/nginx/sites-available/odoo /etc/nginx/sites-enabled/
 
-# Crear un archivo de servicio para systemd
-echo "Creando archivo de servicio de systemd para Odoo..."
+# Configurar Certbot para Let's Encrypt
+echo "Solicitando certificado SSL de Let's Encrypt..."
+sudo certbot --nginx --non-interactive --agree-tos --email $LETSENCRYPT_EMAIL -d $DOMAIN
+
+# Reiniciar Nginx para aplicar la configuración
+echo "Reiniciando Nginx..."
+sudo systemctl restart nginx
+
+# Configurar Odoo para usar HTTPS
+echo "Configurando Odoo para usar HTTPS..."
+sudo sed -i "s|^xmlrpc_interface = .*|xmlrpc_interface = 127.0.0.1|" /opt/odoo/odoo.conf
+sudo sed -i "s|^http_interface = .*|http_interface = 127.0.0.1|" /opt/odoo/odoo.conf
+sudo sed -i "s|^http_port = .*|http_port = 8069|" /opt/odoo/odoo.conf
+
+# Crear un servicio systemd para Odoo
+echo "Creando un servicio systemd para Odoo..."
 cat <<EOL | sudo tee /etc/systemd/system/odoo.service
 [Unit]
 Description=Odoo
@@ -81,57 +103,22 @@ After=network.target
 
 [Service]
 Type=simple
-User=$ODOO_USER
-ExecStart=$ODOO_DIR/odoo-venv/bin/python3 $ODOO_DIR/odoo-bin -c $ODOO_CONF
-WorkingDirectory=$ODOO_DIR
-Restart=always
-LimitNOFILE=8192
-LimitNPROC=8192
+User=odoo
+ExecStart=/opt/odoo/odoo-venv/bin/python3 /opt/odoo/odoo/odoo-bin -c /opt/odoo/odoo.conf
+WorkingDirectory=/opt/odoo
+StandardOutput=journal+console
+PIDFile=/opt/odoo/odoo.pid
 
 [Install]
 WantedBy=default.target
 EOL
 
 # Recargar systemd y habilitar el servicio
-echo "Recargando systemd y habilitando el servicio..."
+echo "Recargando systemd y habilitando el servicio Odoo..."
 sudo systemctl daemon-reload
 sudo systemctl enable odoo
 sudo systemctl start odoo
 
-# Configurar Nginx como proxy inverso
-echo "Configurando Nginx como proxy inverso..."
-cat <<EOL | sudo tee /etc/nginx/sites-available/odoo
-server {
-    listen 80;
-    server_name $DOMAIN;
-
-    access_log /var/log/nginx/odoo.access.log;
-    error_log /var/log/nginx/odoo.error.log;
-
-    location / {
-        proxy_pass http://127.0.0.1:$ODOO_PORT;
-        proxy_set_header Host \$host;
-        proxy_set_header X-Real-IP \$remote_addr;
-        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto \$scheme;
-        proxy_redirect off;
-    }
-}
-EOL
-
-# Habilitar el sitio de Nginx y reiniciar Nginx
-echo "Habilitando el sitio de Nginx y reiniciando..."
-sudo ln -s /etc/nginx/sites-available/odoo /etc/nginx/sites-enabled/
-sudo systemctl restart nginx
-
-# Configurar Let's Encrypt SSL
-echo "Configurando SSL con Let's Encrypt..."
-sudo certbot --nginx -d $DOMAIN --email $EMAIL --agree-tos --non-interactive
-
-# Recargar Nginx para aplicar los cambios
-echo "Recargando Nginx para aplicar los cambios de SSL..."
-sudo systemctl reload nginx
-
-# Finalización
-echo "La instalación y configuración de Odoo 17 se ha completado con éxito."
-echo "Accede a Odoo de manera segura en https://$DOMAIN"
+# Finalizar
+echo "¡La instalación de Odoo 17 CE con Let's Encrypt ha finalizado exitosamente!"
+echo "Puedes acceder a Odoo a través de https://$DOMAIN"
