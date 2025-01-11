@@ -2,10 +2,19 @@
 
 # =============================================================================
 # Script para instalar Odoo 16 Community con localización española y tema
-# similar al de Enterprise en Ubuntu 20.04 utilizando Docker y Docker Compose.
-# Configura Nginx como proxy inverso y Let’s Encrypt SSL para el dominio:
-#    odoo16.2pz.org
+# similar al de Enterprise en Ubuntu 20.04 usando Docker y Docker Compose.
+# Configura Nginx como proxy inverso y Let’s Encrypt SSL para el dominio ingresado.
 # =============================================================================
+
+# === Solicitar Datos al Usuario ===
+read -p "Introduce el dominio para configurar Odoo (ej. odoo16.2pz.org): " DOMAIN
+read -p "Introduce el correo electrónico para Certbot (ej. admin@tu-dominio.org): " EMAIL
+
+# Verificar que se han introducido valores
+if [ -z "$DOMAIN" ] || [ -z "$EMAIL" ]; then
+    echo "Debe introducir valores para el dominio y el correo electrónico."
+    exit 1
+fi
 
 # === Variables de configuración ===
 ODOO_VERSION="16.0"
@@ -13,8 +22,6 @@ ODOO_USER="odoo16"
 ODOO_HOME="/opt/odoo16"
 ODOO_DATA="$ODOO_HOME/data"
 ODOO_ADDONS="$ODOO_HOME/custom-addons"
-DOMAIN="odoo16.2pz.org"
-EMAIL="admin@odoo16.2pz.org"  # Reemplaza con tu correo electrónico real
 NGINX_CONF="/etc/nginx/sites-available/${DOMAIN}.conf"
 CERTBOT_CHALLENGE="/var/www/certbot"
 
@@ -91,7 +98,7 @@ services:
     restart: unless-stopped
 
   web:
-    image: odoo:\$ODOO_VERSION
+    image: odoo:$ODOO_VERSION
     depends_on:
       - db
     ports:
@@ -199,7 +206,7 @@ sudo nginx -t && sudo systemctl reload nginx
 echo "=========================================================="
 echo "10. Configurando renovación automática de certificados"
 echo "=========================================================="
-# Certbot ya instala una tarea cron o un timer de systemd para la renovación automática.
+# Certbot ya configura una tarea cron o un timer de systemd para la renovación automática.
 
 echo "=========================================================="
 echo "¡Instalación y configuración de Odoo 16 completada!"
