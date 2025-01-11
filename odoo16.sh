@@ -1,210 +1,146 @@
 #!/bin/bash
 
-# =============================================================================
-# Script para instalar Odoo 16 Community con localización española y tema
-# similar al de Enterprise en Ubuntu 20.04 usando Docker y Docker Compose.
-# Configura Nginx como proxy inverso y obtiene certificados SSL de Let’s Encrypt
-# en modo standalone para el dominio: odoo16.2pz.org
-# =============================================================================
+# Variables de configuración
+read -p "Introduce el dominio para Odoo (ejemplo: odoo16.example.com): " DOMAIN
+read -p "Introduce el email para Let's Encrypt: " EMAIL
 
-# === Solicitar Datos al Usuario ===
-read -p "Introduce el dominio para configurar Odoo (ej. odoo16.2pz.org): " DOMAIN
-read -p "Introduce el correo electrónico para Certbot (ej. admin@tu-dominio.org): " EMAIL
-
-if [ -z "$DOMAIN" ] || [ -z "$EMAIL" ]; then
-    echo "Debe introducir valores para el dominio y el correo electrónico."
-    exit 1
-fi
-
-# === Variables de configuración ===
 ODOO_VERSION="16.0"
+ODOO_DB_USER="odoo"
+ODOO_DB_PASSWORD="odoo"
+ODOO_DB_PORT="5432"
+PROJECT_DIR="/opt/odoo16"
+SESSION_DIR="odoo_sessions"
 ODOO_USER="odoo16"
-ODOO_HOME="/opt/odoo16"
-ODOO_DATA="$ODOO_HOME/data"
-ODOO_ADDONS="$ODOO_HOME/custom-addons"
-NGINX_CONF="/etc/nginx/sites-available/${DOMAIN}.conf"
-CERTBOT_CHALLENGE="/var/www/certbot"
 
-# === 1. Actualizar el sistema e instalar dependencias ===
-echo "=========================================================="
-echo "1. Actualizando el sistema e instalando dependencias"
-echo "=========================================================="
-sudo apt-get update
-sudo apt-get upgrade -y
-sudo apt-get install -y \
-    git \
-    curl \
-    wget \
-    unzip \
-    nginx \
-    certbot \
-    python3-certbot-nginx \
-    docker.io \
-    docker-compose
-
-# Añadir el usuario actual al grupo docker (para usar docker sin sudo)
-sudo usermod -aG docker $USER
-
-# Reiniciar el servicio de Docker
-sudo systemctl restart docker
-
-# === 2. Verificar instalación de Docker ===
-echo "=========================================================="
-echo "2. Verificando instalación de Docker"
-echo "=========================================================="
-if ! command -v docker &> /dev/null; then
-    echo "Docker no se instaló correctamente. Abortando."
-    exit 1
-else
-    echo "Docker está instalado correctamente."
+# Crear usuario odoo16 si no existe
+if ! id -u $ODOO_USER >/dev/null 2>&1; then
+    sudo useradd -m -s /bin/bash $ODOO_USER
 fi
 
-# === 3. Crear directorios necesarios ===
-echo "=========================================================="
-echo "3. Creando directorios necesarios"
-echo "=========================================================="
-sudo mkdir -p $ODOO_DATA $ODOO_ADDONS $CERTBOT_CHALLENGE
-sudo chown -R $USER:$USER $ODOO_HOME
-sudo chown -R www-data:www-data $CERTBOT_CHALLENGE
+# Crear directorios necesarios
+mkdir -p $PROJECT_DIR/{addons,data,$SESSION_DIR}
 
-# === 4. Crear usuario de sistema para Odoo ===
-echo "=========================================================="
-echo "4. Creando usuario de sistema para Odoo"
-echo "=========================================================="
-if id "$ODOO_USER" &> /dev/null; then
-    echo "El usuario $ODOO_USER ya existe. Continuando..."
-else
-    sudo adduser --system --quiet --group --home "$ODOO_HOME" "$ODOO_USER"
-    echo "Usuario $ODOO_USER creado."
-fi
+# Asignar permisos
+sudo chown -R $ODOO_USER:$ODOO_USER $PROJECT_DIR
+chmod -R 777 $PROJECT_DIR
 
-# === 5. Crear archivo docker-compose.yml ===
-echo "=========================================================="
-echo "5. Creando archivo docker-compose.yml"
-echo "=========================================================="
-cat > $ODOO_HOME/docker-compose.yml <<EOF
+# Clonar localización española de OCA
+sudo -u $ODOO_USER git clone --depth=1 https://github.com/OCA/l10n-spain.git $PROJECT_DIR/addons/l10n-spain
+
+# Crear archivo docker-compose.yml
+cat <<EOF > $PROJECT_DIR/docker-compose.yml
 version: '3.1'
 
 services:
-
   db:
     image: postgres:13
+    container_name: odoo16_db
     environment:
-      - POSTGRES_DB=postgres
-      - POSTGRES_USER=odoo16
-      - POSTGRES_PASSWORD=odoo16password  # Cambia esto por una contraseña segura
+      POSTGRES_DB=postgres
+      POSTGRES_USER=$ODOO_DB_USER
+      POSTGRES_PASSWORD=$ODOO_DB_PASSWORD
     volumes:
       - db_data:/var/lib/postgresql/data
+    networks:
+      - odoo_network
     restart: unless-stopped
 
   web:
     image: odoo:$ODOO_VERSION
+    container_name: odoo16_web
     depends_on:
       - db
     ports:
       - "8069:8069"
     environment:
       - HOST=db
-      - USER=odoo16
-      - PASSWORD=odoo16password  # Debe coincidir con POSTGRES_PASSWORD
+      - USER=$ODOO_DB_USER
+      - PASSWORD=$ODOO_DB_PASSWORD
+      - DB_PORT=$ODOO_DB_PORT
     volumes:
       - ./addons:/mnt/extra-addons
       - ./data:/var/lib/odoo
+      - ./$SESSION_DIR:/var/lib/odoo/sessions
+    networks:
+      - odoo_network
+    restart: unless-stopped
+
+  nginx:
+    image: nginx:latest
+    container_name: odoo16_nginx
+    depends_on:
+      - web
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx.conf:/etc/nginx/conf.d/default.conf
+      - certbot_certs:/etc/letsencrypt
+      - certbot_logs:/var/log/letsencrypt
+    networks:
+      - odoo_network
     restart: unless-stopped
 
 volumes:
   db_data:
+  certbot_certs:
+  certbot_logs:
+
+networks:
+  odoo_network:
+    driver: bridge
 EOF
 
-sudo chown $USER:$USER $ODOO_HOME/docker-compose.yml
-
-# === 6. Clonar localización española y tema Cybrosys ===
-echo "=========================================================="
-echo "6. Clonando localización española y tema Cybrosys"
-echo "=========================================================="
-cd $ODOO_ADDONS
-# Clonar localización española de OCA
-git clone https://github.com/OCA/l10n-spain.git
-# Clonar tema Cybrosys (que contiene el módulo backend_theme_cybrosys)
-git clone --depth 1 --branch 16.0 https://github.com/CybroOdoo/CybroAddons.git
-
-# === 7. Iniciar servicios de Docker Compose ===
-echo "=========================================================="
-echo "7. Iniciando servicios de Docker Compose"
-echo "=========================================================="
-cd $ODOO_HOME
-docker-compose up -d
-echo "Esperando a que Odoo se inicie..."
-sleep 20
-
-# === 8. Configurar Nginx como proxy inverso con SSL ===
-echo "=========================================================="
-echo "8. Configurando Nginx como proxy inverso con SSL"
-echo "=========================================================="
-sudo tee $NGINX_CONF > /dev/null <<EOF
+# Crear archivo nginx.conf
+cat <<EOF > $PROJECT_DIR/nginx.conf
 server {
-    listen 80;
-    server_name $DOMAIN;
-
-    location /.well-known/acme-challenge/ {
-        root $CERTBOT_CHALLENGE;
-    }
+    server_name $DOMAIN www.$DOMAIN;
 
     location / {
-        return 301 https://\$host\$request_uri;
-    }
-}
-
-server {
-    listen 443 ssl http2;
-    server_name $DOMAIN;
-
-    ssl_certificate /etc/letsencrypt/live/$DOMAIN/fullchain.pem;
-    ssl_certificate_key /etc/letsencrypt/live/$DOMAIN/privkey.pem;
-
-    ssl_protocols TLSv1.2 TLSv1.3;
-    ssl_ciphers HIGH:!aNULL:!MD5;
-
-    client_max_body_size 200M;
-
-    location / {
-        proxy_pass http://localhost:8069;
+        proxy_pass http://web:8069;
         proxy_set_header Host \$host;
         proxy_set_header X-Real-IP \$remote_addr;
         proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto \$scheme;
+        proxy_set_header X-Forwarded-Proto https;
     }
+
+    listen 443 ssl;
+    ssl_certificate /etc/letsencrypt/live/$DOMAIN/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/$DOMAIN/privkey.pem;
+    include /etc/letsencrypt/options-ssl-nginx.conf;
+    ssl_dhparam /etc/letsencrypt/ssl-dhparams.pem;
+}
+
+server {
+    if (\$host = $DOMAIN) {
+        return 301 https://\$host\$request_uri;
+    } # managed by Certbot
+
+    if (\$host = www.$DOMAIN) {
+        return 301 https://$DOMAIN\$request_uri;
+    } # managed by Certbot
+
+    listen 80;
+    server_name $DOMAIN www.$DOMAIN;
+    return 404; # managed by Certbot
 }
 EOF
 
-sudo ln -sf $NGINX_CONF /etc/nginx/sites-enabled/$DOMAIN.conf
-sudo mkdir -p /var/www/certbot
-sudo nginx -t && sudo systemctl reload nginx
+# Ir al directorio del proyecto
+cd $PROJECT_DIR
 
-# === 9. Detener Nginx para emisión de certificado en modo standalone ===
-echo "=========================================================="
-echo "9. Deteniendo Nginx para obtener el certificado SSL en modo standalone"
-echo "=========================================================="
-sudo systemctl stop nginx
+# Levantar los contenedores
+docker-compose up -d
 
-# Utilizar Certbot en modo standalone para forzar la emisión
-sudo certbot certonly --standalone -d $DOMAIN --non-interactive --agree-tos -m $EMAIL
+# Solicitar certificado con Certbot
+sudo docker run --rm \
+  -v certbot_certs:/etc/letsencrypt \
+  -v certbot_logs:/var/log/letsencrypt \
+  certbot/certbot certonly --standalone \
+  -d $DOMAIN -d www.$DOMAIN --non-interactive --agree-tos -m $EMAIL
 
-# Reiniciar Nginx
-sudo systemctl start nginx
-sudo nginx -t && sudo systemctl reload nginx
+# Reiniciar nginx para usar el certificado
+docker-compose restart nginx
 
-# === 10. Configurar renovación automática de certificados ===
-echo "=========================================================="
-echo "10. Configurando renovación automática de certificados"
-echo "=========================================================="
-# Certbot ya instala una tarea cron o timer para la renovación automática
-
-echo "=========================================================="
-echo "¡Instalación y configuración de Odoo 16 completada!"
-echo "=========================================================="
-echo " - Accede a tu Odoo en https://$DOMAIN"
-echo " - Usuario administrador: admin"
-echo " - Revisa los parámetros en docker-compose.yml y la configuración de Odoo."
-echo " - Para gestionar Odoo, navega al directorio $ODOO_HOME y usa docker-compose."
-echo "=========================================================="
+# Confirmación final
+echo "Instalación completa. Accede a https://$DOMAIN o https://www.$DOMAIN para verificar la instalación de Odoo 16 con SSL."
