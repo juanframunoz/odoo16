@@ -74,5 +74,5 @@ Si te sale error 500 inmediatamente, forzar la instalación “base”:
 bash
 Copiar código
 docker-compose exec web \
-    odoo -d odoo --db_host=db --db_user=odoo --db_password=odoo \
+    odoo -d odoo --db_host=db --db_user=odoo16 --db_password=odoo16password \
     -i base --stop-after-init
