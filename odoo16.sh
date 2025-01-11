@@ -3,14 +3,14 @@
 # =============================================================================
 # Script para instalar Odoo 16 Community con localización española y tema
 # similar al de Enterprise en Ubuntu 20.04 usando Docker y Docker Compose.
-# Configura Nginx como proxy inverso y Let’s Encrypt SSL para el dominio ingresado.
+# Configura Nginx como proxy inverso y obtiene certificados SSL de Let’s Encrypt
+# en modo standalone para el dominio: odoo16.2pz.org
 # =============================================================================
 
 # === Solicitar Datos al Usuario ===
 read -p "Introduce el dominio para configurar Odoo (ej. odoo16.2pz.org): " DOMAIN
 read -p "Introduce el correo electrónico para Certbot (ej. admin@tu-dominio.org): " EMAIL
 
-# Verificar que se han introducido valores
 if [ -z "$DOMAIN" ] || [ -z "$EMAIL" ]; then
     echo "Debe introducir valores para el dominio y el correo electrónico."
     exit 1
@@ -48,7 +48,7 @@ sudo usermod -aG docker $USER
 # Reiniciar el servicio de Docker
 sudo systemctl restart docker
 
-# === 2. Verificar Instalación de Docker ===
+# === 2. Verificar instalación de Docker ===
 echo "=========================================================="
 echo "2. Verificando instalación de Docker"
 echo "=========================================================="
@@ -59,7 +59,7 @@ else
     echo "Docker está instalado correctamente."
 fi
 
-# === 3. Crear Directorios Necesarios ===
+# === 3. Crear directorios necesarios ===
 echo "=========================================================="
 echo "3. Creando directorios necesarios"
 echo "=========================================================="
@@ -116,38 +116,31 @@ volumes:
   db_data:
 EOF
 
-# Cambiar permisos del archivo docker-compose.yml
 sudo chown $USER:$USER $ODOO_HOME/docker-compose.yml
 
-# === 6. Clonar Localización Española y Tema Cybrosys ===
+# === 6. Clonar localización española y tema Cybrosys ===
 echo "=========================================================="
 echo "6. Clonando localización española y tema Cybrosys"
 echo "=========================================================="
 cd $ODOO_ADDONS
-
 # Clonar localización española de OCA
 git clone https://github.com/OCA/l10n-spain.git
-
 # Clonar tema Cybrosys (que contiene el módulo backend_theme_cybrosys)
 git clone --depth 1 --branch 16.0 https://github.com/CybroOdoo/CybroAddons.git
 
-# === 7. Iniciar los Servicios de Docker Compose ===
+# === 7. Iniciar servicios de Docker Compose ===
 echo "=========================================================="
 echo "7. Iniciando servicios de Docker Compose"
 echo "=========================================================="
 cd $ODOO_HOME
 docker-compose up -d
-
-# Esperar unos segundos para que Odoo se inicie
 echo "Esperando a que Odoo se inicie..."
 sleep 20
 
-# === 8. Configurar Nginx como Proxy Inverso con SSL ===
+# === 8. Configurar Nginx como proxy inverso con SSL ===
 echo "=========================================================="
 echo "8. Configurando Nginx como proxy inverso con SSL"
 echo "=========================================================="
-
-# Crear configuración de Nginx para Odoo
 sudo tee $NGINX_CONF > /dev/null <<EOF
 server {
     listen 80;
@@ -184,35 +177,34 @@ server {
 }
 EOF
 
-# Habilitar la configuración de Nginx
 sudo ln -sf $NGINX_CONF /etc/nginx/sites-enabled/$DOMAIN.conf
-
-# Crear directorio para desafíos de Certbot
 sudo mkdir -p /var/www/certbot
-
-# Verificar la configuración de Nginx y recargar
 sudo nginx -t && sudo systemctl reload nginx
 
-# === 9. Obtener Certificado SSL con Certbot ===
+# === 9. Detener Nginx para emisión de certificado en modo standalone ===
 echo "=========================================================="
-echo "9. Obteniendo certificado SSL con Certbot"
+echo "9. Deteniendo Nginx para obtener el certificado SSL en modo standalone"
 echo "=========================================================="
-sudo certbot --nginx -d $DOMAIN --non-interactive --agree-tos -m $EMAIL
+sudo systemctl stop nginx
 
-# Verificar la configuración de Nginx y recargar nuevamente
+# Utilizar Certbot en modo standalone para forzar la emisión
+sudo certbot certonly --standalone -d $DOMAIN --non-interactive --agree-tos -m $EMAIL
+
+# Reiniciar Nginx
+sudo systemctl start nginx
 sudo nginx -t && sudo systemctl reload nginx
 
-# === 10. Configurar Renovación Automática de Certificados ===
+# === 10. Configurar renovación automática de certificados ===
 echo "=========================================================="
 echo "10. Configurando renovación automática de certificados"
 echo "=========================================================="
-# Certbot ya configura una tarea cron o un timer de systemd para la renovación automática.
+# Certbot ya instala una tarea cron o timer para la renovación automática
 
 echo "=========================================================="
 echo "¡Instalación y configuración de Odoo 16 completada!"
 echo "=========================================================="
 echo " - Accede a tu Odoo en https://$DOMAIN"
 echo " - Usuario administrador: admin"
-echo " - Contraseña maestra: revisa la configuración en docker-compose.yml y los parámetros de Odoo"
+echo " - Revisa los parámetros en docker-compose.yml y la configuración de Odoo."
 echo " - Para gestionar Odoo, navega al directorio $ODOO_HOME y usa docker-compose."
 echo "=========================================================="
