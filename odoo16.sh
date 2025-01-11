@@ -42,9 +42,9 @@ services:
     image: postgres:13
     container_name: odoo16_db
     environment:
-      POSTGRES_DB=postgres
-      POSTGRES_USER=$ODOO_DB_USER
-      POSTGRES_PASSWORD=$ODOO_DB_PASSWORD
+      - POSTGRES_DB=postgres
+      - POSTGRES_USER=$ODOO_DB_USER
+      - POSTGRES_PASSWORD=$ODOO_DB_PASSWORD
     volumes:
       - db_data:/var/lib/postgresql/data
     networks:
@@ -140,8 +140,8 @@ docker-compose up -d
 
 # Solicitar certificado con Certbot
 sudo docker run --rm \
-  -v certbot_certs:/etc/letsencrypt \
-  -v certbot_logs:/var/log/letsencrypt \
+  -v $PROJECT_DIR/certbot_certs:/etc/letsencrypt \
+  -v $PROJECT_DIR/certbot_logs:/var/log/letsencrypt \
   certbot/certbot certonly --standalone \
   -d $DOMAIN -d www.$DOMAIN --non-interactive --agree-tos -m $EMAIL
 
