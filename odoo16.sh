@@ -2,9 +2,9 @@
 
 # =============================================================================
 # Script para instalar Odoo 16 Community con localización española y tema
-# similar al de Enterprise en Ubuntu 20.04 usando Docker y Docker Compose.
-# Configura Nginx como proxy inverso con Let’s Encrypt SSL en el dominio:
-#    odoo16.odoo.uno
+# similar al de Enterprise en Ubuntu 20.04 utilizando Docker y Docker Compose.
+# Configura Nginx como proxy inverso y Let’s Encrypt SSL para el dominio:
+#    odoo16.2pz.org
 # =============================================================================
 
 # === Variables de configuración ===
@@ -13,17 +13,10 @@ ODOO_USER="odoo16"
 ODOO_HOME="/opt/odoo16"
 ODOO_DATA="$ODOO_HOME/data"
 ODOO_ADDONS="$ODOO_HOME/custom-addons"
-DOMAIN="odoo16.odoo.uno"
-EMAIL="admin@odoo16.odoo.uno"  # Cambia esto por tu correo electrónico real
+DOMAIN="odoo16.2pz.org"
+EMAIL="admin@odoo16.2pz.org"  # Reemplaza con tu correo electrónico real
 NGINX_CONF="/etc/nginx/sites-available/${DOMAIN}.conf"
 CERTBOT_CHALLENGE="/var/www/certbot"
-
-# === Funciones ===
-
-# Función para verificar si un comando existe
-command_exists () {
-    command -v "$1" >/dev/null 2>&1
-}
 
 # === 1. Actualizar el sistema e instalar dependencias ===
 echo "=========================================================="
@@ -42,7 +35,7 @@ sudo apt-get install -y \
     docker.io \
     docker-compose
 
-# Añadir el usuario actual al grupo docker
+# Añadir el usuario actual al grupo docker (para usar docker sin sudo)
 sudo usermod -aG docker $USER
 
 # Reiniciar el servicio de Docker
@@ -52,7 +45,7 @@ sudo systemctl restart docker
 echo "=========================================================="
 echo "2. Verificando instalación de Docker"
 echo "=========================================================="
-if ! command_exists docker; then
+if ! command -v docker &> /dev/null; then
     echo "Docker no se instaló correctamente. Abortando."
     exit 1
 else
@@ -71,7 +64,7 @@ sudo chown -R www-data:www-data $CERTBOT_CHALLENGE
 echo "=========================================================="
 echo "4. Creando usuario de sistema para Odoo"
 echo "=========================================================="
-if id "$ODOO_USER" &>/dev/null; then
+if id "$ODOO_USER" &> /dev/null; then
     echo "El usuario $ODOO_USER ya existe. Continuando..."
 else
     sudo adduser --system --quiet --group --home "$ODOO_HOME" "$ODOO_USER"
@@ -82,7 +75,6 @@ fi
 echo "=========================================================="
 echo "5. Creando archivo docker-compose.yml"
 echo "=========================================================="
-
 cat > $ODOO_HOME/docker-compose.yml <<EOF
 version: '3.1'
 
@@ -191,7 +183,7 @@ sudo ln -sf $NGINX_CONF /etc/nginx/sites-enabled/$DOMAIN.conf
 # Crear directorio para desafíos de Certbot
 sudo mkdir -p /var/www/certbot
 
-# Verificar y recargar Nginx
+# Verificar la configuración de Nginx y recargar
 sudo nginx -t && sudo systemctl reload nginx
 
 # === 9. Obtener Certificado SSL con Certbot ===
@@ -200,14 +192,14 @@ echo "9. Obteniendo certificado SSL con Certbot"
 echo "=========================================================="
 sudo certbot --nginx -d $DOMAIN --non-interactive --agree-tos -m $EMAIL
 
-# Verificar y recargar Nginx nuevamente
+# Verificar la configuración de Nginx y recargar nuevamente
 sudo nginx -t && sudo systemctl reload nginx
 
 # === 10. Configurar Renovación Automática de Certificados ===
 echo "=========================================================="
 echo "10. Configurando renovación automática de certificados"
 echo "=========================================================="
-# Certbot ya configura una tarea cron o un timer de systemd para la renovación automática.
+# Certbot ya instala una tarea cron o un timer de systemd para la renovación automática.
 
 echo "=========================================================="
 echo "¡Instalación y configuración de Odoo 16 completada!"
