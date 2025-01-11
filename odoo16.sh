@@ -8,9 +8,15 @@ ODOO_VERSION="16.0"
 ODOO_DB_USER="odoo"
 ODOO_DB_PASSWORD="odoo"
 ODOO_DB_PORT="5432"
-PROJECT_DIR="/opt/odoo16"
+PROJECT_DIR="/home/$USER/odoo16"
 SESSION_DIR="odoo_sessions"
 ODOO_USER="odoo16"
+
+# Actualizar el sistema e instalar Docker y Docker Compose
+sudo apt update && sudo apt upgrade -y
+sudo apt install -y docker.io docker-compose
+sudo systemctl enable docker
+sudo systemctl start docker
 
 # Crear usuario odoo16 si no existe
 if ! id -u $ODOO_USER >/dev/null 2>&1; then
