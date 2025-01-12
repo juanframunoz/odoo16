@@ -1,5 +1,17 @@
 #!/bin/bash
 
+# Formulario para solicitar la master password
+echo "-----------------------------------------"
+echo "Configuración inicial de Odoo"
+echo "-----------------------------------------"
+read -sp "Introduce la master password para Odoo: " master_password
+echo ""
+
+if [ -z "$master_password" ]; then
+    echo "La master password no puede estar vacía. Inténtalo de nuevo."
+    exit 1
+fi
+
 # Actualización del sistema
 echo "Actualizando el sistema..."
 apt update && apt upgrade -y
@@ -62,7 +74,7 @@ sudo chown -R odoo:odoo /opt/odoo/.local
 echo "Configurando el archivo odoo.conf..."
 cat <<EOF > /etc/odoo.conf
 [options]
-admin_passwd = odoo
+admin_passwd = $master_password
 db_host = False
 db_port = False
 db_user = odoo
@@ -108,7 +120,9 @@ ufw allow 8069/tcp
 # Reiniciar Odoo
 sudo systemctl restart odoo
 
-echo "Instalación y configuración de Odoo 16 completada."
+echo "-----------------------------------------"
+echo "¡Instalación de Odoo 16 completada con éxito!"
+
 echo "Configurar Nginx y Let's Encrypt para Odoo"
 echo "-----------------------------------------"
 
