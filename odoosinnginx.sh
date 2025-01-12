@@ -110,5 +110,3 @@ sudo systemctl restart odoo
 
 echo "Instalación y configuración de Odoo 16 completada."
 
-# si aparece error ejecutar c>>sudo certbot --nginx -d dominio.com --email hola@2pz.org --agree-tos --non-interactive --redirect
-
