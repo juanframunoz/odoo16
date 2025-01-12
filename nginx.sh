@@ -75,3 +75,5 @@ sudo certbot renew --dry-run
 echo "-----------------------------------------"
 echo "¡Configuración completada con éxito!"
 echo "Tu sitio está disponible en https://$dominio"
+
+# si aparece error ejecutar c>>sudo certbot --nginx -d dominio.com --email hola@2pz.org --agree-tos --non-interactive --redirect
