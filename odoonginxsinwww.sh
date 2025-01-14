@@ -179,7 +179,7 @@ sudo apt install -y certbot python3-certbot-nginx
 
 # Generar certificado SSL
 echo "Generando certificados SSL para $dominio..."
-sudo certbot --nginx -d $dominio -d --email $email --agree-tos --non-interactive --redirect
+sudo certbot --nginx -d $dominio --email $email --agree-tos --non-interactive --redirect
 
 if [ $? -ne 0 ]; then
     echo "Error al generar el certificado SSL. Verifica tu dominio y correo electrónico."
