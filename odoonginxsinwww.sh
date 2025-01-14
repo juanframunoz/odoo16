@@ -144,12 +144,7 @@ echo "Configurando Nginx para el dominio $dominio (HTTP)..."
 sudo bash -c "cat > /etc/nginx/sites-available/$dominio <<'EOF'
 server {
     listen 80;
-    server_name www.$dominio $dominio;
-
-    # Redirigir www a sin www
-    if (\$host = www.$dominio) {
-        return 301 http://$dominio\$request_uri;
-    }
+    server_name $dominio;
 
     # Pasar tráfico a Odoo en HTTP
     location / {
@@ -184,7 +179,7 @@ sudo apt install -y certbot python3-certbot-nginx
 
 # Generar certificado SSL
 echo "Generando certificados SSL para $dominio..."
-sudo certbot --nginx -d $dominio -d www.$dominio --email $email --agree-tos --non-interactive --redirect
+sudo certbot --nginx -d $dominio -d --email $email --agree-tos --non-interactive --redirect
 
 if [ $? -ne 0 ]; then
     echo "Error al generar el certificado SSL. Verifica tu dominio y correo electrónico."
